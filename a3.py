@@ -1,16 +1,17 @@
 #imports
 import math
 from fractions import Fraction
+import random
 import scipy
 from scipy.optimize import linprog
-
+random.seed(1234)
 
 
 ### PART A ###
 
 def simplex(c, A, b, rule="bland"):
     if any(value < 0 for value in b):
-        return ("infeasible", None, None, 0)
+        raise ValueError("all values of b must be positive")
     #rewrite inequalities using equals signs and input slack vars
     # maximize    30·x1 + 20·x2          ← c = [30, 20]
     # subject to  1·x1 +  1·x2 ≤ 4      ← A[0] = [1,1],  b[0] = 4
@@ -19,6 +20,7 @@ def simplex(c, A, b, rule="bland"):
     #             x1, xz2 ≥ 0
     n = len(c)
     m = len(A)
+    rhs_col=n+m
     tab = [[Fraction(0)] * (n + m + 1) for _ in range(m + 1)] #set tableau size
     #set cols 0->n-1
     for i in range(m):
@@ -36,24 +38,49 @@ def simplex(c, A, b, rule="bland"):
     #set basis variables (starts as slacks)
     basis = [n + i for i in range(m)]
     pivots = 0
+
 #if rule="dantzig"
-    #for each simplex iteration (while neighbor vertices are better)
+    #for each simplex iteration (while there is a negative in the profit row)
         #take min of row m from col 0 to n+m-1,
         # if min < 0, choose pivot column j by min's column
             # if there are no positive entries in the pivot column, the problem is unbounded: return unbounded
-            # for each row 0<i<m-1, if tab[i][j] > 0, compute ratio tab[i][n+m]/tab[i][j]
+            # for each row 0<=i<=m-1, if tab[i][j] > 0, compute ratio tab[i][n+m]/tab[i][j]
             # select pivot element tab[i][j] where ratio of above is minimum
             # update tableau for row of pivot element by dividing all elements in that row by the pivot
             # update all other rows by subtracting their pivot-column coefficient times the pivot row (to zero out the pivot column)
             #basis[pivot_row] = pivot_col
             #pivots = pivots + 1
         # else end
+    if rule=="dantzig":
+        while min(tab[m][0:rhs_col])<0:
+            # choose pivot column by the most negative ele in the profit row
+            piv_col=min(range(rhs_col),key=lambda col:tab[m][col])
+            if all(tab[row][piv_col]<=0 for row in range(m)): return ("unbounded",None,None,None,pivots) #pivot column must have a positive ele or the problem is unbounded
+            # use the min ratio test (piv_col_ele/rhs_ele) to pick the pivot row
+            piv_row=None
+            min_ratio=None
+            for row in range(m):
+                if tab[row][piv_col]>0:
+                    ratio=tab[row][rhs_col]/tab[row][piv_col]
+                    if min_ratio is None or ratio<min_ratio:
+                        min_ratio=ratio
+                        piv_row=row
+            # normalize pivot row by dividing by the pivot element
+            piv_ele=tab[piv_row][piv_col]
+            tab[piv_row]=[ele/piv_ele for ele in tab[piv_row]]
+            # subtract a multiple of the pivot row from every other row to zero out the pivot column
+            for row in range(m+1):
+                if row==piv_row: continue
+                multiple=tab[row][piv_col]
+                tab[row]=[ele-multiple*piv_row_ele for ele,piv_row_ele in zip(tab[row],tab[piv_row])]
+            basis[piv_row]=piv_col
+            pivots+=1
 # elif rule="bland"
     #for each simplex iteration (while neighbor vertices are better)
         #take first negative entry in row m from col 0 to n+m-1,
         # if neg found, choose pivot column j by neg's column
             # if there are no positive entries in the pivot column, the problem is unbounded: return unbounded
-            # for each row 0<i<m-1, if tab[i][j] > 0, compute ratio tab[i][n+m]/tab[i][j]
+            # for each row 0<=i<=m-1, if tab[i][j] > 0, compute ratio tab[i][n+m]/tab[i][j]
             #if two rows tie on the ratio, choose the row with the smallest basis variable index basis[i]
             # select pivot element tab[i][j] where ratio of above is minimum
             # update tableau for row of pivot element by dividing all elements in that row by the pivot
@@ -61,19 +88,65 @@ def simplex(c, A, b, rule="bland"):
             #basis[pivot_row] = pivot_col
             #pivots = pivots + 1
         # else end
-# else exception unknown rule    
-        
-    #basis variables are the vars that have a 1 in one of their rows and a 0 in all other rows. The basic vars are set to the RHS values, while the nonbasic vars are set to 0.
-    z = tab[m][n + m]
-    y = tab[m][n:n + m]
-    x = [Fraction(0)] * n
-    for i in range(m):
-        if basis[i] < n:
-            x[basis[i]] = tab[i][n + m]
-    status = "optimal"
-    return (status,x,z,y,pivots)
+    elif rule=="bland":
+        while min(tab[m][0:rhs_col])<0:
+            # choose pivot column by the first negative ele in the profit row
+            piv_col = None
+            for col in range(rhs_col):
+                if tab[m][col] < 0:
+                    piv_col = col
+                    break
+            if all(tab[row][piv_col]<=0 for row in range(m)): return ("unbounded",None,None,None,pivots) #pivot column must have a positive ele or the problem is unbounded
+            # use the min ratio test (piv_col_ele/rhs_ele) to pick the pivot row
+            piv_row=None
+            min_ratio=None
+            for row in range(m):
+                if tab[row][piv_col]>0:
+                    ratio=tab[row][rhs_col]/tab[row][piv_col]
+                    if min_ratio is None or ratio<=min_ratio:
+                        if(ratio == min_ratio):
+                            if basis[row] < basis[piv_row]: piv_row = row
+                        else:
+                            min_ratio=ratio
+                            piv_row=row
+            # normalize pivot row by dividing by the pivot element
+            piv_ele=tab[piv_row][piv_col]
+            tab[piv_row]=[ele/piv_ele for ele in tab[piv_row]]
+            # subtract a multiple of the pivot row from every other row to zero out the pivot column
+            for row in range(m+1):
+                if row==piv_row: continue
+                multiple=tab[row][piv_col]
+                tab[row]=[ele-multiple*piv_row_ele for ele,piv_row_ele in zip(tab[row],tab[piv_row])]
+            basis[piv_row]=piv_col
+            pivots+=1
+    else:
+        raise Exception("Unknown Rule")   
+
+    x=[Fraction(0)]*n
+    for row in range(m):
+        if basis[row]<n: x[basis[row]]=tab[row][rhs_col]
+    # optimal sol'n value
+    z=tab[m][rhs_col]
+    # the dual values are the profit row entries under the slack columns
+    y=tab[m][n:n+m]
+    return ("optimal",x,z,y,pivots)
+
+def check_certificate(c, A, b, x, y):
+    #1.
+    # for each constraint, multiply each entry of A[i] by the matching entry of x, add them up, and compare the total with b[i]. The total should be <= b[i] (ie: [1,1] * [3,1] = [3,1] summed = 4 is less than or equal to b[i] (4)).
+    # Do for all condition rows, if any fail, return False
+    # Also check that all entries of x are >= 0. If not return False
+    #2.
+    # for each variable, multiply each entry of A[:,j] by the matching entry of y, add them up, and compare the total with c[j]. The total should be >= c[j].
+    # Also check that all entries of y are >= 0. If not return False
+    #3.
+    # check that the objective values match: c dot x == b dot y
+    return True
 
 def test_simplex():
+    #A1 5 TESTS
+    
+    rules = ["bland","dantzig"]
     #bakery
     c = [30,20]
     A = [[1,1],[1,3],[1,0]]
@@ -81,6 +154,14 @@ def test_simplex():
     exp_z = 110
     exp_x = (3,1)
     exp_y = (20,0,10)
+    for rule in rules:
+        res = simplex(c,A,b,rule)
+        cert_res = check_certificate(c,A,b,res[1],res[3])
+        assert (res[0],tuple(res[1]),res[2],tuple(res[3])) == ("optimal",exp_x,exp_z,exp_y)
+        print(f"Bakery Result ({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}\n")
+        print(f"X: ({', '.join(str(val) for val in res[1])})") #handle fractions
+        print(f"Y: ({', '.join(str(val) for val in res[3])})") #handle fractions
+
     #print shop
     c = [5,4]
     A = [[6,4],[1,2]]
@@ -88,6 +169,14 @@ def test_simplex():
     exp_z = 21
     exp_x = (3,Fraction(3,2))
     exp_y = (Fraction(3,4),Fraction(1,2))
+    for rule in rules:
+        res = simplex(c,A,b,rule)
+        cert_res = check_certificate(c,A,b,res[1],res[3])
+        assert (res[0],tuple(res[1]),res[2],tuple(res[3])) == ("optimal",exp_x,exp_z,exp_y)
+        print(f"Print Shop Result ({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}\n")
+        print(f"X: ({', '.join(str(val) for val in res[1])})") #handle fractions
+        print(f"Y: ({', '.join(str(val) for val in res[3])})") #handle fractions
+    
     #example B
     c = [3,5]
     A = [[1,0],[0,2],[3,2]]
@@ -95,6 +184,14 @@ def test_simplex():
     exp_z = 36
     exp_x = (2,6)
     exp_y = None  # not given in the assignment
+    for rule in rules:
+        res = simplex(c,A,b,rule)
+        cert_res = check_certificate(c,A,b,res[1],res[3])
+        assert (res[0],tuple(res[1]),res[2]) == ("optimal",exp_x,exp_z)
+        print(f"Example B Result ({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}\n")
+        print(f"X: ({', '.join(str(val) for val in res[1])})") #handle fractions
+        print(f"Y: ({', '.join(str(val) for val in res[3])})") #handle fractions
+
     #degenerate
     c = [30,20]
     A = [[1,1],[1,3],[1,0]]
@@ -102,6 +199,14 @@ def test_simplex():
     exp_z = 110
     exp_x = None  # not given in the assignment (ratio-test tie)
     exp_y = None  # not given in the assignment
+    for rule in rules:
+        res = simplex(c,A,b,rule)
+        cert_res = check_certificate(c,A,b,res[1],res[3])
+        assert (res[0],res[2]) == ("optimal",exp_z)
+        print(f"Degenerate Case Result ({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}\n")
+        print(f"X: ({', '.join(str(val) for val in res[1])})") #handle fractions
+        print(f"Y: ({', '.join(str(val) for val in res[3])})") #handle fractions
+
     #unbounded
     c = [1,1]
     A = [[1,-1]]
@@ -110,12 +215,44 @@ def test_simplex():
     exp_z = None
     exp_x = None
     exp_y = None
-    pass
+    for rule in rules:
+        res = simplex(c,A,b,rule)
+        assert (res[0]) == ("unbounded")
+        print(f"Unbounded Result ({rule}): \nStatus:{res[0]} | Expected: {"unbounded"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\n")
+        print(f"X: ({', '.join(str(val) for val in res[1])})") #handle fractions
+        print(f"Y: ({', '.join(str(val) for val in res[3])})") #handle fractions
 
-def check_certificate(c, A, b, x, y):
-    return False
 
 
+
+    successes = 0
+    for _ in range(20):
+        passes = True
+        n = random.randint(2, 6)
+        m = random.randint(2, 6)
+        A = [[random.randint(1, 9) for _ in range(n)] for _ in range(m)]
+        b = [random.randint(10, 50) for _ in range(m)]
+        c = [random.randint(1, 20) for _ in range(n)]
+        neg_c = [-ele for ele in c]
+        ref = linprog(neg_c, A, b) #pass -c and use -ref.fun (z) later because linprog minimizes
+        res_dat= simplex(c, A, b, rule="dantzig")
+        res_bland = simplex(c, A, b, rule="bland")
+        if ref.status == 0: # 0 means optimal
+            if res_dat[0] != "optimal": passes = False
+            if res_bland[0] != "optimal": passes = False
+            if res_dat[2] != res_bland[2]: passes = False
+            if abs(float(res_dat[2]) - (-ref.fun)) >  1e-9 : passes = False #ensure z is ~equal among all results
+            if abs(float(res_bland[2]) - (-ref.fun)) >  1e-9: passes = False #ensure z is ~equal among all results
+            if not check_certificate(c, A, b, res_dat[1], res_dat[3]): passes = False
+            if not check_certificate(c, A, b, res_bland[1], res_bland[3]): passes = False
+        else:
+            if res_dat[0] != "unbounded": passes = False
+            if res_bland[0] != "unbounded": passes = False
+            if ref.status != 3: passes = False         
+        if passes: successes += 1
+    print(f"{successes} random tests passed for a success rate of: {100*successes/20}%")
+    assert successes == 20
+    
 
 ### PART B ###
 
