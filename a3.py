@@ -11,10 +11,10 @@ def simplex(c, A, b, rule="bland"):
     if any(value < 0 for value in b):
         raise ValueError("all values of b must be non-negative")
     #rewrite inequalities using equals signs and input slack vars
-    # maximize    30·x1 + 20·x2          ← c = [30, 20]
-    # subject to  1·x1 +  1·x2 ≤ 4      ← A[0] = [1,1],  b[0] = 4
-    #             1·x1 +  3·x2 ≤ 9      ← A[1] = [1,3],  b[1] = 9
-    #             1·x1 +  0·x2 ≤ 3      ← A[2] = [1,0],  b[2] = 3
+    # maximize    30·x1 + 20·x2          
+    # subject to  1·x1 +  1·x2 ≤ 4      
+    #             1·x1 +  3·x2 ≤ 9      
+    #             1·x1 +  0·x2 ≤ 3   
     #             x1, xz2 ≥ 0
     n = len(c)
     m = len(A)
