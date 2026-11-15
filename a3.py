@@ -1,8 +1,6 @@
 #imports
-import math
 from fractions import Fraction
 import random
-import scipy
 from scipy.optimize import linprog
 random.seed(1234)
 
@@ -11,7 +9,7 @@ random.seed(1234)
 
 def simplex(c, A, b, rule="bland"):
     if any(value < 0 for value in b):
-        raise ValueError("all values of b must be positive")
+        raise ValueError("all values of b must be non-negative")
     #rewrite inequalities using equals signs and input slack vars
     # maximize    30·x1 + 20·x2          ← c = [30, 20]
     # subject to  1·x1 +  1·x2 ≤ 4      ← A[0] = [1,1],  b[0] = 4
@@ -120,7 +118,7 @@ def simplex(c, A, b, rule="bland"):
             basis[piv_row]=piv_col
             pivots+=1
     else:
-        raise Exception("Unknown Rule")   
+        raise ValueError("Unknown Rule")   
 
     x=[Fraction(0)]*n
     for row in range(m):
@@ -132,20 +130,41 @@ def simplex(c, A, b, rule="bland"):
     return ("optimal",x,z,y,pivots)
 
 def check_certificate(c, A, b, x, y):
-    #1.
-    # for each constraint, multiply each entry of A[i] by the matching entry of x, add them up, and compare the total with b[i]. The total should be <= b[i] (ie: [1,1] * [3,1] = [3,1] summed = 4 is less than or equal to b[i] (4)).
-    # Do for all condition rows, if any fail, return False
-    # Also check that all entries of x are >= 0. If not return False
-    #2.
-    # for each variable, multiply each entry of A[:,j] by the matching entry of y, add them up, and compare the total with c[j]. The total should be >= c[j].
-    # Also check that all entries of y are >= 0. If not return False
-    #3.
-    # check that the objective values match: c dot x == b dot y
+    if x is None or y is None: return False
+    num_constraints, num_vars = len(A), len(c)
+
+    #primal feasible
+    for var_index in range(num_vars):
+        if x[var_index] < 0: return False
+    for constraint_index in range(num_constraints):
+        row_total = 0
+        for var_index in range(num_vars):
+            row_total += A[constraint_index][var_index] * x[var_index]
+        if row_total > b[constraint_index]: return False
+
+    #dual feasible
+    for constraint_index in range(num_constraints):
+        if y[constraint_index] < 0: return False
+    for var_index in range(num_vars):
+        column_total = 0
+        for constraint_index in range(num_constraints):
+            column_total += A[constraint_index][var_index] * y[constraint_index]
+        if column_total < c[var_index]: return False
+
+    #strong duality
+    primal_obj = 0
+    dual_obj = 0
+    for var_index in range(num_vars):
+        primal_obj += c[var_index]*x[var_index]
+    for constraint_index in range(num_constraints):
+            dual_obj += b[constraint_index]*y[constraint_index]
+    if primal_obj != dual_obj: return False
+
     return True
 
 def test_simplex():
     #A1 5 TESTS
-    
+    print("")
     rules = ["bland","dantzig"]
     #bakery
     c = [30,20]
@@ -154,13 +173,15 @@ def test_simplex():
     exp_z = 110
     exp_x = (3,1)
     exp_y = (20,0,10)
+    print("\nBakery Results")
     for rule in rules:
         res = simplex(c,A,b,rule)
         cert_res = check_certificate(c,A,b,res[1],res[3])
+        assert cert_res
         assert (res[0],tuple(res[1]),res[2],tuple(res[3])) == ("optimal",exp_x,exp_z,exp_y)
-        print(f"Bakery Result ({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}\n")
+        print(f"({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}")
         print(f"X: ({', '.join(str(val) for val in res[1])})") #handle fractions
-        print(f"Y: ({', '.join(str(val) for val in res[3])})") #handle fractions
+        print(f"Y: ({', '.join(str(val) for val in res[3])})\n") #handle fractions
 
     #print shop
     c = [5,4]
@@ -169,13 +190,15 @@ def test_simplex():
     exp_z = 21
     exp_x = (3,Fraction(3,2))
     exp_y = (Fraction(3,4),Fraction(1,2))
+    print("\nPrint Shop Results")
     for rule in rules:
         res = simplex(c,A,b,rule)
         cert_res = check_certificate(c,A,b,res[1],res[3])
+        assert cert_res
         assert (res[0],tuple(res[1]),res[2],tuple(res[3])) == ("optimal",exp_x,exp_z,exp_y)
-        print(f"Print Shop Result ({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}\n")
+        print(f"({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}")
         print(f"X: ({', '.join(str(val) for val in res[1])})") #handle fractions
-        print(f"Y: ({', '.join(str(val) for val in res[3])})") #handle fractions
+        print(f"Y: ({', '.join(str(val) for val in res[3])})\n") #handle fractions
     
     #example B
     c = [3,5]
@@ -184,13 +207,15 @@ def test_simplex():
     exp_z = 36
     exp_x = (2,6)
     exp_y = None  # not given in the assignment
+    print("\nExample B Results")
     for rule in rules:
         res = simplex(c,A,b,rule)
         cert_res = check_certificate(c,A,b,res[1],res[3])
+        assert cert_res
         assert (res[0],tuple(res[1]),res[2]) == ("optimal",exp_x,exp_z)
-        print(f"Example B Result ({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}\n")
+        print(f"Example B Result ({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}")
         print(f"X: ({', '.join(str(val) for val in res[1])})") #handle fractions
-        print(f"Y: ({', '.join(str(val) for val in res[3])})") #handle fractions
+        print(f"Y: ({', '.join(str(val) for val in res[3])})\n") #handle fractions
 
     #degenerate
     c = [30,20]
@@ -199,13 +224,15 @@ def test_simplex():
     exp_z = 110
     exp_x = None  # not given in the assignment (ratio-test tie)
     exp_y = None  # not given in the assignment
+    print("\nDegenerate Case Results")
     for rule in rules:
         res = simplex(c,A,b,rule)
         cert_res = check_certificate(c,A,b,res[1],res[3])
+        assert cert_res
         assert (res[0],res[2]) == ("optimal",exp_z)
-        print(f"Degenerate Case Result ({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}\n")
+        print(f"({rule}): \nStatus:{res[0]} | Expected: {"optimal"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\nCertificate Check: {cert_res}")
         print(f"X: ({', '.join(str(val) for val in res[1])})") #handle fractions
-        print(f"Y: ({', '.join(str(val) for val in res[3])})") #handle fractions
+        print(f"Y: ({', '.join(str(val) for val in res[3])})\n") #handle fractions
 
     #unbounded
     c = [1,1]
@@ -215,15 +242,11 @@ def test_simplex():
     exp_z = None
     exp_x = None
     exp_y = None
+    print("\nUnbounded Results")
     for rule in rules:
         res = simplex(c,A,b,rule)
         assert (res[0]) == ("unbounded")
-        print(f"Unbounded Result ({rule}): \nStatus:{res[0]} | Expected: {"unbounded"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\n")
-        print(f"X: ({', '.join(str(val) for val in res[1])})") #handle fractions
-        print(f"Y: ({', '.join(str(val) for val in res[3])})") #handle fractions
-
-
-
+        print(f"({rule}): \nStatus:{res[0]} | Expected: {"unbounded"} \nZ:{res[2]} | Expected: {exp_z}\nX:{res[1]} | Expected: {exp_x}\nY:{res[3]} | Expected: {exp_y}\nPivots:{res[4]}\n")
 
     successes = 0
     for _ in range(20):
@@ -250,9 +273,25 @@ def test_simplex():
             if res_bland[0] != "unbounded": passes = False
             if ref.status != 3: passes = False         
         if passes: successes += 1
-    print(f"{successes} random tests passed for a success rate of: {100*successes/20}%")
+    print(f"{successes} random tests passed for a success rate of: {100*successes/20}%\n")
     assert successes == 20
     
 
 ### PART B ###
+
+## B1. ##
+
+def test_b1():
+    print("\nTEST B1")
+    A=[[3,1,2],[4,3,4],[1,4,2]] #constraints
+    c=[5,8,6] #profit
+    b=[24,48,20] #rhs
+    status,x,z,y,pivots = simplex(c,A,b)
+    print(f"status: {status}\nx: ({', '.join(str(val) for val in x)})\ny: ({', '.join(str(val) for val in y)})\nz: {z}\npivots: {pivots}")
+    # B1.5: verify strong duality with cert
+    primal_obj = sum(c[j]*x[j] for j in range(len(c)))
+    dual_obj = sum(b[i]*y[i] for i in range(len(b)))
+    cert = check_certificate(c, A, b, x, y)
+    print(f"primal objective: {primal_obj}\ndual objective: {dual_obj}\ncertificate check: {cert}")
+    assert cert and primal_obj == dual_obj == 64
 
