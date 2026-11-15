@@ -162,6 +162,19 @@ def check_certificate(c, A, b, x, y):
 
     return True
 
+def klee_minty(n):
+    c = [2**(n-j) for j in range(1, n+1)]
+    A = []
+    for i in range(1, n+1):
+        row = []
+        for j in range(1, n+1):
+            if j < i:   row.append(2 * 2**(i-j))
+            elif j == i: row.append(1)
+            else:        row.append(0)
+        A.append(row)
+    b = [5**i for i in range(1, n+1)]
+    return c, A, b
+
 def test_simplex():
     #A1 5 TESTS
     print("")
@@ -295,3 +308,25 @@ def test_b1():
     print(f"primal objective: {primal_obj}\ndual objective: {dual_obj}\ncertificate check: {cert}")
     assert cert and primal_obj == dual_obj == 64
 
+
+
+def test_b2():
+    print("\nTEST B2")
+    c, A, b = klee_minty(3)
+    assert (c, A, b) == ([4, 2, 1], [[1, 0, 0], [4, 1, 0], [8, 4, 1]], [5, 25, 125])
+    results = []
+    for n in range(2, 9):
+        c, A, b = klee_minty(n)
+        dan = simplex(c, A, b, rule="dantzig")
+        bla = simplex(c, A, b, rule="bland")
+        assert dan[2] == bla[2] == 5**n
+        assert dan[4] == 2**n - 1
+        results.append((n, dan[4], bla[4], dan[2]))
+
+    print(f"{'n':>2} | {'Dantzig':>7} | {'Bland':>5} | {'z*':>7}")
+    for n, pd, pb, z in results:
+        print(f"{n:>2} | {pd:>7} | {pb:>5} | {z:>7}")
+
+    print("\nn,Dantzig,Bland")
+    for n, pd, pb, z in results:
+        print(f"{n},{pd},{pb}")
